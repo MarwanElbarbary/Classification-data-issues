@@ -12,7 +12,7 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    return pipeline("text-classification", model="distilbert-base-uncased", device=-1)
+    return pipeline("sentiment-analysis")
 
 try:
     with st.spinner("Loading model..."):
@@ -53,7 +53,6 @@ def prioritize_issues(df, text_column):
     result = result.sort_values(by="priority_score", ascending=False).reset_index(drop=True)
     return result
 
-# ---------- GLOBAL STYLING ----------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
@@ -122,7 +121,6 @@ html, body, [class*="css"]  {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- HEADER ----------
 st.markdown("""
 <div class="app-header">
     <h1>Issue Prioritization Dashboard</h1>
@@ -136,7 +134,6 @@ df = None
 ranked_df = None
 selected_column = None
 
-# ---------- TAB 1: UPLOAD & SETTINGS ----------
 with tab_upload:
     st.subheader("Data Upload")
     uploaded_file = st.file_uploader("Upload a CSV or ZIP containing a CSV", type=["csv", "zip"])
@@ -176,7 +173,6 @@ with tab_upload:
     else:
         st.info("Please upload a CSV or ZIP to start.")
 
-# ---------- TAB 2: RESULTS ----------
 with tab_results:
     st.subheader("Analysis & Dashboard")
     if "ranked_df" in st.session_state and "selected_column" in st.session_state:
@@ -201,8 +197,8 @@ with tab_results:
         metrics = [
             ("Unique issues", total_unique),
             ("Total records", total_occurrences),
-            ("Highest priority score", round(top_priority,3)),
-            ("Average priority score", round(avg_priority,3))
+            ("Highest priority score", round(top_priority, 3)),
+            ("Average priority score", round(avg_priority, 3))
         ]
         for col, (label, value) in zip([col_a, col_b, col_c, col_d], metrics):
             with col:
@@ -227,11 +223,10 @@ with tab_results:
     else:
         st.info("No results yet. Run prioritization from the first tab.")
 
-# ---------- TAB 3: CONFIG ----------
 with tab_config:
     st.subheader("Model & Run Information")
     st.markdown("""
-    **Model:** distilbert-base-uncased  
+    **Model:** default sentiment-analysis pipeline  
     **Task:** Text Classification  
     **Details:**  
     - Each issue text is processed by the AI model.  
