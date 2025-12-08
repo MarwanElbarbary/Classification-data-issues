@@ -5,3 +5,4 @@ torch>=2.2.0
 sentencepiece>=0.2.0
 accelerate>=0.29.0
 urllib3>=2.2.0
+googletrans==4.0.0-rc1
