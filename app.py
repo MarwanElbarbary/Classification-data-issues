@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
+from googletrans import Translator
 import zipfile
 from datetime import datetime
 
@@ -9,6 +10,8 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+translator = Translator()
 
 @st.cache_resource
 def load_model():
@@ -23,20 +26,32 @@ except Exception as e:
 
 def score_to_priority_label(score):
     if score >= 0.8:
-        return "High"
+        return "مرتفع"
     elif score >= 0.5:
-        return "Medium"
+        return "متوسط"
     else:
-        return "Low"
+        return "منخفض"
+
+def translate_to_english(text):
+    try:
+        return translator.translate(str(text), src='auto', dest='en').text
+    except:
+        return str(text)
+
+def translate_to_arabic(text):
+    try:
+        return translator.translate(str(text), src='auto', dest='ar').text
+    except:
+        return str(text)
 
 def prioritize_issues(df, text_column):
     df = df.copy()
+    english_texts = df[text_column].apply(translate_to_english)
     scores = []
     progress_bar = st.progress(0)
     total = len(df)
 
-    for idx, row in df.iterrows():
-        text = str(row[text_column])
+    for idx, text in enumerate(english_texts):
         try:
             result = classifier(text)
             score = result[0]["score"] if result else 0.0
@@ -48,27 +63,23 @@ def prioritize_issues(df, text_column):
     progress_bar.empty()
     df["priority_score"] = scores
     df["priority_level"] = df["priority_score"].apply(score_to_priority_label)
+    df["issue_ar"] = df[text_column].apply(translate_to_arabic)
+    df["occurrences"] = 1
 
     grouped = (
-        df.groupby(text_column, as_index=False)
+        df.groupby("issue_ar", as_index=False)
         .agg({
             "priority_score": "max",
-            "priority_level": lambda x: x.iloc[x.argmax()] if len(x) else "Low"
+            "priority_level": lambda x: x.iloc[x.argmax()],
+            "occurrences": "sum"
         })
         .sort_values(by="priority_score", ascending=False)
         .reset_index(drop=True)
     )
 
-    counts = (
-        df.groupby(text_column)
-        .size()
-        .reset_index(name="occurrences")
-    )
+    return grouped
 
-    result = grouped.merge(counts, on=text_column, how="left")
-    result = result.sort_values(by="priority_score", ascending=False).reset_index(drop=True)
-    return result
-
+# ------------------- CSS -------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -92,16 +103,8 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .stButton>button { border-radius: 999px; background: linear-gradient(90deg, #6366f1, #8b5cf6); color: white; font-weight: 600; padding: 0.55rem 1.4rem; border: none; box-shadow: 0 10px 30px rgba(79,70,229,0.45); transition: all 0.15s ease; }
 .stButton>button:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 14px 40px rgba(79,70,229,0.7); }
 .dataframe td, .dataframe th { color: #e5e7eb !important; background-color: #020617 !important; border-color: #111827 !important; font-size: 0.85rem !important; }
-.badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.75rem; font-weight:500; }
-.badge-warning { background:rgba(245,158,11,0.1); color:#fbbf24; border:1px solid rgba(245,158,11,0.5); }
-.priority-high { background:rgba(239,68,68,0.12); color:#fca5a5; border:1px solid rgba(239,68,68,0.7); }
-.priority-medium { background:rgba(245,158,11,0.12); color:#fcd34d; border:1px solid rgba(245,158,11,0.7); }
-.priority-low { background:rgba(34,197,94,0.12); color:#6ee7b7; border:1px solid rgba(34,197,94,0.7); }
 .panel { background: rgba(15,23,42,0.94); border-radius: 16px; border: 1px solid #1f2937; padding: 1rem 1.2rem; }
 .panel-header { font-size: 0.9rem; font-weight: 500; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; }
-.stTabs [data-baseweb="tab-list"] { gap: 6px; }
-.stTabs [data-baseweb="tab"] { border-radius: 999px; padding-top: 6px; padding-bottom: 6px; }
-.stSelectbox, .stNumberInput, .stTextInput, .stSlider { font-size: 0.9rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,9 +112,7 @@ with st.sidebar:
     st.markdown("## 📊 Issue Prioritizer")
     st.markdown("Discover the most critical issues in your dataset using AI analysis.")
     st.markdown("---")
-    st.markdown("Tip: Start with a sample, then run on full dataset for complete insights.")
-    st.markdown("---")
-    st.caption("Built with ❤️ using Streamlit + Transformers")
+    st.caption("Built with ❤️ using Streamlit + Transformers + Google Translate")
 
 st.markdown("""
 <div class="app-header">
@@ -206,12 +207,11 @@ with tab_upload:
 # -------------------- RESULTS TAB --------------------
 with tab_results:
     st.markdown('<div class="panel"><div class="panel-header">Analysis & Dashboard</div>', unsafe_allow_html=True)
-    if "ranked_df" in st.session_state and "selected_column" in st.session_state:
+    if "ranked_df" in st.session_state:
         ranked_df = st.session_state["ranked_df"]
-        selected_column = st.session_state["selected_column"]
         top_n = st.session_state.get("top_n", 20)
 
-        f1, f2, f3 = st.columns([1.1, 1.1, 1])
+        f1, f2, f3 = st.columns([1.1,1.1,1])
         with f1:
             min_priority = st.slider("Minimum priority score", 0.0, 1.0, 0.0, 0.01)
         with f2:
@@ -221,58 +221,45 @@ with tab_results:
 
         filtered_df = ranked_df[(ranked_df["priority_score"] >= min_priority) & (ranked_df["occurrences"] >= min_occ)]
         if search_term:
-            filtered_df = filtered_df[filtered_df[selected_column].astype(str).str.contains(search_term, case=False, na=False)]
-
-        s1, s2, s3 = st.columns(3)
-        with s1:
-            if st.button("Sort by priority score"):
-                filtered_df = filtered_df.sort_values(by="priority_score", ascending=False)
-        with s2:
-            if st.button("Sort by occurrences"):
-                filtered_df = filtered_df.sort_values(by="occurrences", ascending=False)
-        with s3:
-            if st.button("Sort by priority × occurrences"):
-                filtered_df = filtered_df.assign(combined_metric=filtered_df["priority_score"]*filtered_df["occurrences"]).sort_values(by="combined_metric", ascending=False)
-
-        filtered_df = filtered_df.reset_index(drop=True)
+            filtered_df = filtered_df[filtered_df["issue_ar"].astype(str).str.contains(search_term, case=False, na=False)]
 
         total_unique = len(filtered_df)
         top_priority = filtered_df["priority_score"].max() if total_unique > 0 else 0
         avg_priority = filtered_df["priority_score"].mean() if total_unique > 0 else 0
         total_occurrences = filtered_df["occurrences"].sum() if "occurrences" in filtered_df.columns else 0
-        high_count = (filtered_df["priority_level"] == "High").sum()
-        medium_count = (filtered_df["priority_level"] == "Medium").sum()
-        low_count = (filtered_df["priority_level"] == "Low").sum()
+        high_count = (filtered_df["priority_level"] == "مرتفع").sum()
+        medium_count = (filtered_df["priority_level"] == "متوسط").sum()
+        low_count = (filtered_df["priority_level"] == "منخفض").sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        metrics = [("Unique issues", total_unique), ("Total records", total_occurrences), ("Highest priority score", round(top_priority,3)), ("Average priority score", round(avg_priority,3))]
-        for col, (label, value) in zip([c1, c2, c3, c4], metrics):
+        metrics = [
+            ("Unique issues", total_unique),
+            ("Total records", total_occurrences),
+            ("Highest priority score", round(top_priority,3)),
+            ("Average priority score", round(avg_priority,3))
+        ]
+        for col, (label, value) in zip([c1,c2,c3,c4], metrics):
             with col:
                 st.markdown('<div class="metric-card">', unsafe_allow_html=True)
                 st.markdown(f'<div class="metric-label">{label}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="metric-value">{value}</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        if len(filtered_df) > 0:
-            st.markdown("### Top Issues")
-            if selected_column not in filtered_df.columns:
-                st.error(f"Column `{selected_column}` not found in dataframe. Available: {filtered_df.columns.tolist()}")
-            else:
-                display_df = filtered_df[[selected_column, "priority_level", "priority_score", "occurrences"]].head(top_n).copy()
-                display_df["priority_score"] = display_df["priority_score"].round(3)
-                st.dataframe(display_df, use_container_width=True)
+        st.markdown("### Top Issues")
+        display_df = filtered_df[["issue_ar", "priority_level", "priority_score", "occurrences"]].head(top_n).copy()
+        display_df["priority_score"] = display_df["priority_score"].round(3)
+        st.dataframe(display_df, use_container_width=True)
 
-                st.markdown("### Priority Score Chart")
-                try:
-                    chart_df = filtered_df.head(top_n).set_index(selected_column)[["priority_score"]]
-                    st.bar_chart(chart_df)
-                except:
-                    st.warning("Could not render chart.")
+        st.markdown("### Priority Score Chart")
+        try:
+            chart_df = filtered_df.head(top_n).set_index("issue_ar")[["priority_score"]]
+            st.bar_chart(chart_df)
+        except:
+            st.warning("Could not render chart.")
 
         csv_data = filtered_df.to_csv(index=False).encode("utf-8")
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button("Download CSV", csv_data, f"issues_prioritized_{ts}.csv", "text/csv")
-
     else:
         st.info("No results yet. Run AI prioritization from 'Upload & Settings'.")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -280,22 +267,50 @@ with tab_results:
 # -------------------- CONFIG TAB --------------------
 with tab_config:
     st.markdown('<div class="panel"><div class="panel-header">Model & Run Information</div>', unsafe_allow_html=True)
+
     st.markdown("""
     **Model:** Hugging Face default sentiment-analysis  
     **Task:** Text Classification  
     **Details:**  
     - Each issue text is processed by the AI model.  
-    - Model outputs a confidence score used as the priority indicator.  
+    - Texts are translated to English if needed for analysis.  
+    - Results are returned in Arabic.  
     - Issues are grouped by text; max score is considered.  
     - Occurrences count duplicates in the dataset.  
     """)
     st.markdown("---")
+
     st.markdown("**Current Run Settings**")
-    if "sample_option" in st.session_state and "selected_column" in st.session_state:
-        st.write(f"Text column: `{st.session_state['selected_column']}`")
-        st.write(f"Rows analyzed: {st.session_state.get('sample_option','N/A')}")
+    if "selected_column" in st.session_state and "sample_option" in st.session_state:
+        st.write(f"- **Text column:** `{st.session_state['selected_column']}`")
+        st.write(f"- **Rows analyzed:** {st.session_state.get('sample_option','N/A')}")
         if st.session_state.get("custom_rows"):
-            st.write(f"Custom rows: {st.session_state['custom_rows']}")
+            st.write(f"- **Custom rows:** {st.session_state['custom_rows']}")
     else:
         st.write("No run executed yet.")
+
+    if "ranked_df" in st.session_state:
+        ranked_df = st.session_state["ranked_df"]
+        st.markdown("---")
+        st.markdown("**Run Summary Stats**")
+        total_unique = len(ranked_df)
+        top_priority = ranked_df["priority_score"].max() if total_unique > 0 else 0
+        avg_priority = ranked_df["priority_score"].mean() if total_unique > 0 else 0
+        total_occurrences = ranked_df["occurrences"].sum() if "occurrences" in ranked_df.columns else 0
+
+        c1, c2, c3, c4 = st.columns(4)
+        stats = [
+            ("Unique issues", total_unique),
+            ("Total occurrences", total_occurrences),
+            ("Highest priority score", round(top_priority,3)),
+            ("Average priority score", round(avg_priority,3))
+        ]
+        for col, (label, value) in zip([c1,c2,c3,c4], stats):
+            with col:
+                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-label">{label}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-value">{value}</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
+
