@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
-from datetime import datetime
+from googletrans import Translator
 import zipfile
+from datetime import datetime
 
 st.set_page_config(
     page_title="Issue Prioritization Dashboard",
@@ -10,12 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Try importing deep-translator; if not available, set fallback
-try:
-    from deep_translator import GoogleTranslator
-    _translator_available = True
-except Exception:
-    _translator_available = False
+translator = Translator()
 
 @st.cache_resource
 def load_model():
@@ -37,29 +33,23 @@ def score_to_priority_label(score):
         return "منخفض"
 
 def translate_to_english(text):
-    if not _translator_available:
-        return str(text)
     try:
-        return GoogleTranslator(source='auto', target='en').translate(str(text))
-    except Exception:
+        return translator.translate(str(text), src='auto', dest='en').text
+    except:
         return str(text)
 
 def translate_to_arabic(text):
-    if not _translator_available:
-        return str(text)
     try:
-        # if the input is likely english already, source='auto' will handle it
-        return GoogleTranslator(source='auto', target='ar').translate(str(text))
-    except Exception:
+        return translator.translate(str(text), src='auto', dest='ar').text
+    except:
         return str(text)
 
 def prioritize_issues(df, text_column):
     df = df.copy()
-    # translate all texts to English for model inference
     english_texts = df[text_column].apply(translate_to_english)
     scores = []
     progress_bar = st.progress(0)
-    total = len(df) if len(df) > 0 else 1
+    total = len(df)
 
     for idx, text in enumerate(english_texts):
         try:
@@ -73,7 +63,6 @@ def prioritize_issues(df, text_column):
     progress_bar.empty()
     df["priority_score"] = scores
     df["priority_level"] = df["priority_score"].apply(score_to_priority_label)
-    # final displayed issue text should be Arabic
     df["issue_ar"] = df[text_column].apply(translate_to_arabic)
     df["occurrences"] = 1
 
@@ -81,7 +70,7 @@ def prioritize_issues(df, text_column):
         df.groupby("issue_ar", as_index=False)
         .agg({
             "priority_score": "max",
-            "priority_level": lambda x: x.iloc[x.argmax()] if len(x) else "منخفض",
+            "priority_level": lambda x: x.iloc[x.argmax()],
             "occurrences": "sum"
         })
         .sort_values(by="priority_score", ascending=False)
@@ -324,3 +313,4 @@ with tab_config:
                 st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
+
