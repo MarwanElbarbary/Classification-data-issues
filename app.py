@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 import zipfile
 from datetime import datetime
 
@@ -10,8 +10,6 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
-
-translator = Translator()
 
 @st.cache_resource
 def load_model():
@@ -34,25 +32,35 @@ def score_to_priority_label(score):
 
 def translate_to_english(text):
     try:
-        return translator.translate(str(text), src='auto', dest='en').text
+        # deep-translator syntax
+        return GoogleTranslator(source='auto', target='en').translate(str(text))
     except:
         return str(text)
 
+
 def translate_to_arabic(text):
     try:
-        return translator.translate(str(text), src='auto', dest='ar').text
+        # deep-translator syntax
+        return GoogleTranslator(source='auto', target='ar').translate(str(text))
     except:
         return str(text)
 
 def prioritize_issues(df, text_column):
     df = df.copy()
+    
+
     english_texts = df[text_column].apply(translate_to_english)
+    
     scores = []
     progress_bar = st.progress(0)
     total = len(df)
 
     for idx, text in enumerate(english_texts):
         try:
+      
+            if text and len(str(text)) > 512:
+                text = str(text)[:512]
+            
             result = classifier(text)
             score = result[0]["score"] if result else 0.0
         except Exception:
@@ -61,8 +69,11 @@ def prioritize_issues(df, text_column):
         progress_bar.progress((idx + 1) / total)
 
     progress_bar.empty()
+    
     df["priority_score"] = scores
     df["priority_level"] = df["priority_score"].apply(score_to_priority_label)
+    
+
     df["issue_ar"] = df[text_column].apply(translate_to_arabic)
     df["occurrences"] = 1
 
